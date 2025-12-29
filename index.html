@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SISTEMA SUMAJ - v19.8 (Mapa Fix Hoy)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        :root { 
+            --disponible:#2ecc71; --ocupado:#e74c3c; 
+            --sucia: #f1c40f; --limpieza: #3498db;   
+            --parcial:#f39c12; --pagado:#2980b9; --historial:#5a6268; 
+            --dark:#1a2a3a; --accent:#3498db; 
+        }
+        body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .navbar { background: var(--dark) !important; border-bottom: 3px solid var(--accent); }
+        .nav-link.active { color: var(--accent) !important; border-bottom: 3px solid var(--accent) !important; }
+        
+        /* TARJETAS MAPA (VISUALIZACION CLARA) */
+        .hab-card { 
+            border-radius: 15px; 
+            border: 1px solid #dee2e6; 
+            transition: 0.3s; 
+            cursor: pointer; 
+            background: white; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
+            border-left: 12px solid transparent; /* Barra de color más ancha */
+            position: relative;
+            overflow: hidden;
+        }
+        .hab-card:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        
+        .status-disponible { border-left-color: var(--disponible); }
+        .status-ocupado { border-left-color: var(--ocupado); background: #fff5f5; } /* Fondo rojizo suave */
+        .status-sucia { border-left-color: var(--sucia); background: #fffff0; } /* Fondo amarillo suave */
+        .status-limpieza { border-left-color: var(--limpieza); background: #f0f8ff; } /* Fondo azul suave */
+
+        .piso-header { background: #cbd5e0; color: #2d3748; padding: 8px 15px; border-radius: 8px; margin-top: 30px; font-weight: 800; font-size: 0.9rem; }
+        
+        /* CALENDARIO & LISTAS */
+        .cal-wrapper { overflow-x: auto; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .table-calendar { font-size: 0.75rem; border-collapse: separate; border-spacing: 1px; width: 100%; min-width: 900px; }
+        .table-calendar th { text-align: center; background: #343a40; color: white; padding: 8px; position: sticky; top: 0; z-index: 20; }
+        .cal-room-col { background: #212529; color: white; position: sticky; left: 0; z-index: 30; font-weight: bold; width: 60px; text-align: center; }
+        .cal-cell { height: 40px; border: 1px solid #dee2e6; vertical-align: middle; text-align: center; min-width: 40px; padding: 0; position: relative; background-color: #fff; }
+        .cell-content { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; color: white; cursor: pointer; overflow: hidden; white-space: nowrap; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+        
+        .st-mid { background: var(--ocupado); } 
+        .st-start { background: linear-gradient(to right, white 50%, var(--ocupado) 50%); justify-content: flex-end; padding-right: 2px; color: #333; }
+        .st-end { background: linear-gradient(to right, var(--ocupado) 50%, white 50%); justify-content: flex-start; padding-left: 2px; color: #333; } 
+        .hist-mid { background: var(--historial); }
+        .hist-start { background: linear-gradient(to right, white 50%, var(--historial) 50%); }
+        .hist-end { background: linear-gradient(to right, var(--historial) 50%, white 50%); }
+        .cal-weekend { background-color: #f8f9fa; } 
+        .cal-today-col { border-bottom: 3px solid #ffc107 !important; background-color: #fffbe6; }
+
+        /* UTILIDADES LIMPIEZA */
+        .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; margin-bottom: 10px; background: white; border-radius: 8px; border-left: 5px solid #ccc; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .clean-sucia { border-left-color: var(--sucia); } .clean-limpieza { border-left-color: var(--limpieza); } .clean-ok { border-left-color: var(--disponible); opacity: 0.8; }
+
+        /* UTILIDADES OPERACIONES */
+        .op-card { font-size: 0.9rem; margin-bottom: 8px; border-left: 5px solid #ccc; background: white; padding: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
+        .op-in { border-left-color: #2ecc71; } .op-out { border-left-color: #e74c3c; }
+        .stock-bajo { color: red; font-weight: bold; }
+        .mov-ingreso { color: #198754; font-weight: bold; }
+        .mov-egreso { color: #dc3545; font-weight: bold; }
+
+        /* LOGIN */
+        #loginOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a2a3a; z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .login-card { background: white; padding: 2rem; border-radius: 10px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+        .pass-hidden { -webkit-text-security: disc; }
+    </style>
+</head>
+<body>
+
+<div id="loginOverlay">
+    <div class="login-card">
+        <h3 class="fw-bold text-primary mb-3"><i class="fas fa-hotel me-2"></i>SUMAJ LODGE</h3>
+        <p class="text-muted small mb-4">v19.8 (Mapa Hoy)</p>
+        <div class="mb-3 text-start"><label class="form-label small fw-bold">Usuario</label><input type="text" id="loginUser" class="form-control" placeholder="Usuario"></div>
+        <div class="mb-4 text-start"><label class="form-label small fw-bold">Contraseña</label><input type="password" id="loginPass" class="form-control" placeholder="Contraseña"></div>
+        <button class="btn btn-primary w-100 fw-bold py-2" onclick="login()">INGRESAR</button>
+        <p class="mt-3 small text-muted">Admin: admin / admin707</p>
+    </div>
+</div>
+
+<div id="appInterface" style="display:none;">
+    <nav class="navbar navbar-expand shadow mb-4">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand fw-bold text-white"><i class="fas fa-hotel me-2"></i>SUMAJ LAGOON LODGE</span>
+            <div class="d-flex align-items-center gap-3">
+                <div class="text-white small text-end"><div id="userDisplay" class="fw-bold text-warning"></div><div id="reloj" class="fw-light"></div></div>
+                <button class="btn btn-sm btn-outline-light" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Salir</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <ul class="nav nav-tabs mb-4 border-0" id="mainTabs">
+            <li class="nav-item" id="nav-mapa"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-mapa">🗺️ MAPA</button></li>
+            <li class="nav-item" id="nav-limpieza"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-limpieza" onclick="renderLimpieza()">🧹 LIMPIEZA</button></li>
+            <li class="nav-item" id="nav-calendario"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-calendario" onclick="renderCal()">📅 CALENDARIO</button></li>
+            <li class="nav-item" id="nav-operaciones"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-operaciones" onclick="actualizarOperaciones()">📋 OPERACIONES</button></li>
+            <li class="nav-item role-admin"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-caja" onclick="renderCaja()">💰 CAJA</button></li>
+            <li class="nav-item role-admin"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-inventario">📦 ALMACÉN</button></li>
+            <li class="nav-item role-admin"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reporte" onclick="actualizarReporte()">📊 REPORTES</button></li>
+            <li class="nav-item role-admin"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-usuarios" onclick="renderUsuarios()">👥 USUARIOS</button></li>
+            <li class="nav-item role-admin"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-auditoria" onclick="renderLogs()">👁️ AUDITORÍA</button></li>
+            <li class="nav-item role-admin"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-config">⚙️ CONFIG</button></li>
+        </ul>
+
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="tab-mapa">
+                <div class="row">
+                    <div class="col-xl-3 col-lg-4">
+                        <div class="card shadow-sm border-0 p-4 mb-4">
+                            <h5 class="fw-bold mb-4 text-dark border-bottom pb-2">Nuevo Ingreso</h5>
+                            <div class="row g-2">
+                                <div class="col-12"><label class="small fw-bold">Nombre</label><input type="text" id="cliente" class="form-control form-control-sm"></div>
+                                <div class="col-8"><label class="small fw-bold">DNI</label><input type="text" id="dni" class="form-control form-control-sm"></div>
+                                <div class="col-4"><label class="small fw-bold">Pax</label><input type="number" id="numPersonas" class="form-control form-control-sm" value="1" min="1"></div>
+                                <div class="col-12"><label class="small fw-bold">Celular</label><input type="text" id="c_celular" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="small fw-bold">Habitación</label><select id="habSelect" class="form-select form-select-sm"></select></div>
+                                <div class="col-6"><label class="small fw-bold">Tipo</label><select id="tipoHab" class="form-select form-select-sm"><option>Simple</option><option>Matrimonial</option><option>Doble</option><option>Triple</option><option>Suite</option></select></div>
+                                <div class="col-6"><label class="small fw-bold">In</label><input type="date" id="checkin" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="small fw-bold">Out</label><input type="date" id="checkout" class="form-control form-control-sm"></div>
+                                <div class="col-6"><label class="small fw-bold">Total S/</label><input type="number" id="total" class="form-control form-control-sm" value="0"></div>
+                                <div class="col-6"><label class="small fw-bold">Medio</label><select id="medioPago" class="form-select form-select-sm"><option>Efectivo</option><option>Yape</option><option>Plin</option><option>Tarjeta</option></select></div>
+                                <div class="col-12"><label class="small fw-bold">Pago</label><select id="pagoEstado" class="form-select form-select-sm" onchange="toggleAdelanto()"><option value="Falta Pagar">Falta Pagar</option><option value="Pagado">Pagado</option><option value="Adelanto">Adelanto</option></select></div>
+                                <div class="col-12" id="divAdelanto" style="display:none;"><label class="small fw-bold">Adelanto S/</label><input type="number" id="adelanto" class="form-control form-control-sm" value="0"></div>
+                            </div>
+                            <button class="btn btn-primary w-100 mt-3 fw-bold" onclick="guardarReserva()">GUARDAR</button>
+                        </div>
+                    </div>
+                    <div class="col-xl-9 col-lg-8">
+                        <div class="d-flex justify-content-between align-items-center mb-3 bg-white p-3 rounded shadow-sm">
+                            <span class="small fw-bold text-muted">VISTA: HOY</span>
+                            <div class="d-flex gap-2 small">
+                                <span class="badge bg-success">Libre</span>
+                                <span class="badge bg-danger">Ocupado</span>
+                                <span class="badge bg-warning text-dark">Sucia</span>
+                                <span class="badge bg-primary">Limpieza</span>
+                            </div>
+                            <input type="date" id="filtroFecha" class="form-control w-25 shadow-sm" onchange="actualizarPantalla()">
+                        </div>
+                        <div id="gridHabitaciones"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-limpieza">
+                <div class="card p-4 border-0 shadow-sm">
+                    <h5 class="fw-bold mb-4"><i class="fas fa-broom"></i> Gestión de Limpieza</h5>
+                    <div class="row">
+                        <div class="col-md-6 border-end">
+                            <h6 class="text-danger fw-bold border-bottom pb-2">SUCIAS / EN PROCESO</h6>
+                            <div id="listSucias" class="mt-3"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-success fw-bold border-bottom pb-2">LISTAS</h6>
+                            <div id="listLimpias" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-calendario">
+                <div class="card border-0 shadow-sm p-3">
+                    <div class="d-flex justify-content-between flex-wrap gap-2 align-items-center mb-3 bg-light p-2 rounded">
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-sm btn-outline-dark" onclick="navMes(-1)"><i class="fas fa-chevron-left"></i></button>
+                            <h6 class="m-0 fw-bold text-uppercase" id="calMesTitulo" style="min-width: 150px; text-align:center;"></h6>
+                            <button class="btn btn-sm btn-outline-dark" onclick="navMes(1)"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+                        <button class="btn btn-primary btn-sm fw-bold shadow-sm ms-2" onclick="abrirModalReservaCal()">➕ NUEVA RESERVA</button>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-danger" onclick="exportarCalPDF()"><i class="fas fa-file-pdf"></i></button>
+                            <button class="btn btn-sm btn-dark" onclick="exportarCalImg()"><i class="fas fa-image"></i></button>
+                        </div>
+                        <input type="hidden" id="calInicio"><input type="hidden" id="calFin">
+                    </div>
+                    <div id="calContainer" class="cal-wrapper"><table class="table-calendar" id="tablaCal"></table></div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-operaciones"><div class="card p-4 border-0 shadow-sm"><div class="d-flex justify-content-between mb-4"><h5 class="fw-bold">Reporte Operativo</h5><div class="d-flex gap-2"><input type="date" id="fechaOp" class="form-control w-auto" onchange="actualizarOperaciones()"><button class="btn btn-outline-secondary btn-sm" onclick="imprimirOp()">Imprimir</button></div></div><div id="opArea" class="row g-4"><div class="col-md-6 border-end"><h6>LLEGADAS</h6><div id="listIn"></div></div><div class="col-md-6"><h6>SALIDAS</h6><div id="listOut"></div></div></div></div></div>
+            <div class="tab-pane fade" id="tab-caja"><div class="row g-4"><div class="col-md-4"><div class="card p-4 border-0 shadow-sm mb-3"><h6 class="fw-bold mb-3 text-primary">Caja Chica</h6><select id="cajaTipo" class="form-select mb-2"><option value="egreso">🔴 EGRESO</option><option value="ingreso">🟢 INGRESO</option></select><select id="cajaCat" class="form-select mb-2"><option>Compras</option><option>Servicios</option><option>Otros</option></select><input type="text" id="cajaDesc" class="form-control mb-2" placeholder="Descripción"><input type="number" id="cajaMonto" class="form-control mb-2" placeholder="Monto"><button class="btn btn-dark w-100" onclick="guardarMovimientoCaja()">REGISTRAR</button></div><div class="card bg-warning bg-opacity-10 p-3 text-center"><h6 class="fw-bold">SALDO</h6><h2 class="fw-bold text-warning" id="cajaSaldo">S/ 0.00</h2></div></div><div class="col-md-8"><div class="card p-4 border-0 shadow-sm"><table class="table table-sm" id="tablaCaja"><thead class="table-light"><tr><th>Fecha</th><th>Tipo</th><th>Desc</th><th>Monto</th><th></th></tr></thead><tbody id="bodyCaja"></tbody></table></div></div></div></div>
+            <div class="tab-pane fade" id="tab-inventario"><div class="row g-4"><div class="col-md-4"><div class="card p-4 border-0 shadow-sm"><h6>Nuevo Item</h6><select id="invTipo" class="form-select mb-2" onchange="toggleStockInput()"><option value="producto">Producto</option><option value="servicio">Servicio</option></select><input type="text" id="invNombre" class="form-control mb-2" placeholder="Nombre"><input type="number" id="invPrecio" class="form-control mb-2" placeholder="Precio"><div id="divStockInput"><input type="number" id="invStock" class="form-control mb-2" placeholder="Stock"></div><button class="btn btn-success w-100" onclick="agregarProducto()">GUARDAR</button></div></div><div class="col-md-8"><div class="card p-4 border-0 shadow-sm"><table class="table table-sm"><thead class="table-light"><tr><th>Item</th><th>Tipo</th><th>Precio</th><th>Stock</th><th>Acción</th></tr></thead><tbody id="tablaInventario"></tbody></table></div></div></div></div>
+            <div class="tab-pane fade" id="tab-reporte"><div class="row g-3 mb-4"><div class="col-md-3"><div class="card p-3 border-0 shadow-sm"><label class="small fw-bold">Desde</label><input type="date" id="hist_desde" class="form-control" onchange="actualizarReporte()"></div></div><div class="col-md-3"><div class="card p-3 border-0 shadow-sm"><label class="small fw-bold">Hasta</label><input type="date" id="hist_hasta" class="form-control" onchange="actualizarReporte()"></div></div><div class="col-md-6 d-flex align-items-end"><button class="btn btn-success me-2" onclick="exportarExcel()">Excel</button></div></div><div class="row mb-4"><div class="col-md-3"><div class="card card-dash bg-success p-3 text-white"><div>INGRESOS</div><h3 id="dashCobrado">S/ 0.00</h3></div></div><div class="col-md-3"><div class="card card-dash bg-secondary p-3 text-white"><div>GASTOS</div><h3 id="dashGastos">S/ 0.00</h3></div></div><div class="col-md-3"><div class="card card-dash bg-primary p-3 text-white"><div>UTILIDAD</div><h3 id="dashUtilidad">S/ 0.00</h3></div></div><div class="col-md-3"><div class="card card-dash bg-danger p-3 text-white"><div>PENDIENTE</div><h3 id="dashPendiente">S/ 0.00</h3></div></div></div><div id="captureArea" class="card border-0 shadow-sm p-4"><div class="table-responsive"><table class="table table-hover small" id="tablaHistorialHTML"><thead class="table-dark"><tr><th>Hab</th><th>Pax</th><th>Nombre</th><th>In/Out</th><th>Total</th><th>Pagado</th><th>Cierre</th></tr></thead><tbody id="tablaHistorial"></tbody></table></div></div></div>
+            <div class="tab-pane fade" id="tab-usuarios"><div class="row"><div class="col-md-4"><div class="card p-4 border-0 shadow-sm"><h6 class="fw-bold mb-3">Usuario</h6><input type="hidden" id="editUserIndex" value="-1"><label class="small">Usuario</label><input type="text" id="newUserName" class="form-control mb-2"><label class="small">Contraseña</label><input type="text" id="newUserPass" class="form-control mb-2"><label class="small fw-bold mt-2">Módulos:</label><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-mapa"><label>Mapa</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-limpieza"><label>Limpieza</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-calendario" checked><label>Calendario</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-operaciones" checked><label>Operaciones</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-caja"><label>Caja</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-inventario"><label>Almacén</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-reporte"><label>Reportes</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-config"><label>Config</label></div><div class="form-check"><input class="form-check-input mod-check" type="checkbox" value="nav-usuarios"><label>Admin</label></div><div class="d-flex gap-2 mt-3"><button class="btn btn-primary w-100" onclick="guardarUsuario()">Guardar</button><button class="btn btn-outline-secondary" onclick="limpiarFormUsuario()">Limpiar</button></div></div></div><div class="col-md-8"><div class="card p-4 border-0 shadow-sm"><table class="table table-hover table-sm small"><thead class="table-light"><tr><th>User</th><th>Pass</th><th>Permisos</th><th></th></tr></thead><tbody id="tablaUsuarios"></tbody></table></div></div></div></div>
+            <div class="tab-pane fade" id="tab-auditoria"><div class="card p-4 border-0 shadow-sm"><div class="d-flex justify-content-between mb-3"><h6 class="fw-bold">Logs</h6><div class="d-flex gap-2"><select id="filterUser" class="form-select form-select-sm" onchange="renderLogs()"><option value="">Todos</option></select><input type="date" id="filterDateFrom" class="form-control form-control-sm" onchange="renderLogs()"><input type="date" id="filterDateTo" class="form-control form-control-sm" onchange="renderLogs()"><button class="btn btn-sm btn-secondary" onclick="imprimirLogs()">Imprimir</button></div></div><div class="table-responsive" id="printLogsArea"><table class="table table-striped table-sm log-table"><thead class="table-dark"><tr><th>Fecha</th><th>User</th><th>Acción</th><th>Detalle</th></tr></thead><tbody id="tablaLogs"></tbody></table></div></div></div>
+            <div class="tab-pane fade" id="tab-config"><div class="row g-4"><div class="col-md-6"><div class="card p-4 border-0 shadow-sm"><h6>Backup</h6><button class="btn btn-primary w-100 mb-2" onclick="descargarBackup()">DESCARGAR</button><hr><input type="file" id="fileBackup" class="form-control mb-2"><button class="btn btn-warning w-100" onclick="restaurarBackup()">RESTAURAR</button></div><div class="card p-4 border-0 shadow-sm mt-3"><h6>Habitaciones</h6><input type="number" id="newHabNum" class="form-control mb-2" placeholder="Num"><input type="number" id="newHabPiso" class="form-control mb-2" placeholder="Piso"><button class="btn btn-dark w-100" onclick="agregarHabitacion()">Crear</button></div></div></div></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalH" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content border-0 shadow-lg"><div id="mh" class="modal-header text-white"><h5 id="mt" class="fw-bold m-0"></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body p-4" id="mb"></div></div></div></div>
+<div class="modal fade" id="modalResCal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow-lg"><div class="modal-header bg-primary text-white"><h5 class="fw-bold m-0">➕ Nueva Reserva</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body p-4"><div class="row g-2"><div class="col-12"><label class="small fw-bold">Nombre</label><input type="text" id="c_cliente" class="form-control form-control-sm"></div><div class="col-8"><label class="small fw-bold">DNI</label><input type="text" id="c_dni" class="form-control form-control-sm"></div><div class="col-4"><label class="small fw-bold">Pax</label><input type="number" id="c_numPersonas" class="form-control form-control-sm" value="1" min="1"></div><div class="col-12"><label class="small fw-bold">Celular</label><input type="text" id="c_celular" class="form-control form-control-sm"></div><div class="col-6"><label class="small fw-bold">Hab</label><select id="c_habSelect" class="form-select form-select-sm"></select></div><div class="col-6"><label class="small fw-bold">Tipo</label><select id="c_tipoHab" class="form-select form-select-sm"><option>Simple</option><option>Matrimonial</option><option>Doble</option><option>Triple</option><option>Suite</option></select></div><div class="col-6"><label class="small fw-bold">In</label><input type="date" id="c_in" class="form-control form-control-sm"></div><div class="col-6"><label class="small fw-bold">Out</label><input type="date" id="c_out" class="form-control form-control-sm"></div><div class="col-6"><label class="small fw-bold">Total S/</label><input type="number" id="c_total" class="form-control form-control-sm" value="0"></div><div class="col-6"><label class="small fw-bold">Medio</label><select id="c_medioPago" class="form-select form-select-sm"><option>Efectivo</option><option>Yape</option><option>Plin</option><option>Tarjeta</option></select></div><div class="col-12"><label class="small fw-bold">Pago</label><select id="c_pagoEstado" class="form-select form-select-sm" onchange="toggleAdelantoCal()"><option value="Falta Pagar">Falta Pagar</option><option value="Pagado">Pagado</option><option value="Adelanto">Adelanto</option></select></div><div class="col-12" id="divAdelantoCal" style="display:none;"><label class="small fw-bold">Adelanto S/</label><input type="number" id="c_adelanto" class="form-control form-control-sm" value="0"></div></div><div class="col-12"><button class="btn btn-primary w-100 fw-bold mt-3" onclick="guardarReservaCal()">Confirmar</button></div></div></div></div></div>
+
+<script>
+    const { jsPDF } = window.jspdf;
+    
+    // --- FECHA LOCAL CORRECTA (Fix v19.8) ---
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    const localDate = new Date(now.getTime() - offset);
+    const hoy = localDate.toISOString().split('T')[0];
+    
+    // --- DATOS ---
+    let habs = JSON.parse(localStorage.getItem('sumaj_habs_v5')) || [
+        {num:101, piso:1}, {num:102, piso:1}, {num:103, piso:1}, {num:104, piso:1}, {num:105, piso:1}, {num:106, piso:1}, {num:107, piso:1}, {num:108, piso:1},
+        {num:201, piso:2}, {num:202, piso:2}, {num:203, piso:2}, {num:204, piso:2}, {num:205, piso:2}, {num:206, piso:2}, {num:207, piso:2}, {num:208, piso:2}
+    ];
+    let ress = JSON.parse(localStorage.getItem('sumaj_ress_v5')) || [];
+    let historial = JSON.parse(localStorage.getItem('sumaj_hist_v5')) || [];
+    let inventario = JSON.parse(localStorage.getItem('sumaj_inv_v2')) || [];
+    let caja = JSON.parse(localStorage.getItem('sumaj_caja_v1')) || [];
+    let users = JSON.parse(localStorage.getItem('sumaj_users_v1')) || [{ user: 'admin', pass: 'admin707', modules: ['all'] }]; 
+    let logs = JSON.parse(localStorage.getItem('sumaj_logs_v1')) || []; 
+    let limpieza = JSON.parse(localStorage.getItem('sumaj_clean_v1')) || {}; 
+    
+    let currentUser = null;
+    let modalInstance = null;
+    let modalResCal = null;
+    let showPass = false;
+    let calDate = new Date(); 
+
+    // --- LOGIN ---
+    function login() {
+        const u = document.getElementById('loginUser').value;
+        const p = document.getElementById('loginPass').value;
+        const userFound = users.find(x => x.user === u && x.pass === p);
+        if (userFound) {
+            currentUser = userFound;
+            localStorage.setItem('sumaj_session', JSON.stringify(currentUser)); 
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('appInterface').style.display = 'block';
+            document.getElementById('userDisplay').innerText = `👤 ${currentUser.user.toUpperCase()}`;
+            aplicarPermisos();
+            registrarLog("LOGIN", "Ingreso al sistema");
+            initSystem();
+        } else { alert("Credenciales incorrectas"); }
+    }
+    
+    function logout() { 
+        localStorage.removeItem('sumaj_session');
+        registrarLog("LOGOUT", "Salida"); 
+        location.reload(); 
+    }
+    
+    // Auto Login Check
+    const savedSession = localStorage.getItem('sumaj_session');
+    if(savedSession) {
+        currentUser = JSON.parse(savedSession);
+        const valid = users.find(u => u.user === currentUser.user && u.pass === currentUser.pass);
+        if(valid) {
+            currentUser = valid;
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('appInterface').style.display = 'block';
+            document.getElementById('userDisplay').innerText = `👤 ${currentUser.user.toUpperCase()}`;
+            setTimeout(() => { aplicarPermisos(); initSystem(); }, 100);
+        } else {
+            localStorage.removeItem('sumaj_session');
+        }
+    }
+
+    function aplicarPermisos() {
+        document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'none');
+        let firstTab = null;
+        if (currentUser.modules.includes('all')) {
+            document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
+            firstTab = '#tab-mapa';
+        } else {
+            currentUser.modules.forEach(modId => {
+                const el = document.getElementById(modId);
+                if(el) { el.style.display = 'block'; if(!firstTab) firstTab = el.querySelector('button').getAttribute('data-bs-target'); }
+            });
+        }
+        if(firstTab) { const triggerEl = document.querySelector(`button[data-bs-target="${firstTab}"]`); if(triggerEl) bootstrap.Tab.getOrCreateInstance(triggerEl).show(); }
+    }
+
+    function registrarLog(accion, detalle) {
+        logs.unshift({ dateIso: new Date().toISOString(), dateStr: new Date().toLocaleString(), user: currentUser ? currentUser.user : 'system', action: accion, details: detalle });
+        if(logs.length > 1000) logs.pop(); 
+        localStorage.setItem('sumaj_logs_v1', JSON.stringify(logs));
+    }
+    function checkPermiso(modId) { return currentUser.modules.includes('all') || currentUser.modules.includes(modId); }
+    function verificarPermisoAdmin() { if (currentUser.modules.includes('all') || currentUser.user === 'admin') return true; alert("⛔ Acceso Denegado"); return false; }
+
+    // --- GESTIÓN DE LIMPIEZA ---
+    function renderLimpieza() {
+        const listSucias = document.getElementById('listSucias');
+        const listLimpias = document.getElementById('listLimpias');
+        listSucias.innerHTML = ''; listLimpias.innerHTML = '';
+
+        habs.sort((a,b)=>a.num-b.num).forEach(h => {
+            const estado = limpieza[h.num] || 'limpia';
+            const r = ress.find(res => res.habNum == h.num && (hoy >= res.in && hoy < res.out));
+            if(r) return; 
+
+            const html = `
+                <div class="clean-row ${estado === 'sucia' ? 'clean-sucia' : (estado === 'limpieza' ? 'clean-limpieza' : 'clean-ok')}">
+                    <strong>Hab ${h.num}</strong>
+                    <span>${estado.toUpperCase()}</span>
+                    <div>
+                        ${estado === 'sucia' ? `<button class="btn btn-sm btn-primary" onclick="setEstadoLimpieza(${h.num}, 'limpieza')">Limpiar</button>` : ''}
+                        ${estado === 'limpieza' ? `<button class="btn btn-sm btn-success" onclick="setEstadoLimpieza(${h.num}, 'limpia')">Terminar</button>` : ''}
+                        ${estado === 'limpia' ? `<button class="btn btn-sm btn-outline-warning" onclick="setEstadoLimpieza(${h.num}, 'sucia')">Marcar Sucia</button>` : ''}
+                    </div>
+                </div>`;
+            
+            if(estado === 'limpia') listLimpias.innerHTML += html;
+            else listSucias.innerHTML += html;
+        });
+    }
+
+    function setEstadoLimpieza(num, estado) {
+        limpieza[num] = estado;
+        localStorage.setItem('sumaj_clean_v1', JSON.stringify(limpieza));
+        registrarLog("LIMPIEZA", `Hab ${num} a estado ${estado}`);
+        renderLimpieza();
+        actualizarPantalla();
+    }
+
+    // --- MAPA (SIEMPRE INICIA EN HOY) ---
+    function actualizarPantalla(){
+        const f = document.getElementById('filtroFecha').value;
+        const grid = document.getElementById('gridHabitaciones');
+        const select = document.getElementById('habSelect');
+        grid.innerHTML = ''; select.innerHTML = '';
+        const pisos = [...new Set(habs.map(h => h.piso))].sort();
+        
+        pisos.forEach(p => { 
+            grid.innerHTML += `<div class="piso-header">PISO ${p}</div><div class="row g-3" id="p${p}"></div>`; 
+        });
+        
+        habs.sort((a,b)=>a.num-b.num).forEach(h => {
+            const r = ress.find(x => x.habNum == h.num && (f >= x.in && f <= x.out));
+            const pDiv = document.getElementById(`p${h.piso}`);
+            const estadoLimpieza = limpieza[h.num] || 'limpia';
+            
+            let cardClass = 'hab-card';
+            let statusBadge = '<span class="badge bg-success">Libre</span>';
+            let info = `<div class="small text-muted">Disponible</div>`;
+            
+            if (r) {
+                const tCons = (r.consumos||[]).reduce((a,b)=>a+(b.precio*b.cantidad),0);
+                const deu = (r.total + tCons) - r.adelanto;
+                cardClass += ' status-ocupado'; 
+                statusBadge = `<span class="badge bg-danger">Ocupado</span>`;
+                info = `<div class="small fw-bold text-primary text-truncate">${r.cliente}</div>`;
+                if (deu > 0.1) info += `<div class="small text-danger fw-bold">Deuda: S/ ${deu.toFixed(2)}</div>`;
+                else info += `<div class="small text-success fw-bold">Pagado</div>`;
+            } else if (estadoLimpieza === 'sucia') {
+                cardClass += ' status-sucia';
+                statusBadge = `<span class="badge bg-warning text-dark">Sucia</span>`;
+                info = `<div class="small text-warning fw-bold">Limpieza Pendiente</div>`;
+            } else if (estadoLimpieza === 'limpieza') {
+                cardClass += ' status-limpieza';
+                statusBadge = `<span class="badge bg-primary">Limpieza</span>`;
+                info = `<div class="small text-primary fw-bold">Limpiando...</div>`;
+            } else {
+                cardClass += ' status-disponible';
+            }
+
+            pDiv.innerHTML += `
+                <div class="col-md-3 col-6">
+                    <div class="${cardClass} p-3" onclick="verDetalle(${h.num}, ${r?r.id:null})">
+                        <div class="d-flex justify-content-between mb-1">
+                            <b class="fs-5">${h.num}</b>
+                            ${statusBadge}
+                        </div>
+                        ${info}
+                    </div>
+                </div>`;
+            
+            select.innerHTML += `<option value="${h.num}">${h.num}</option>`;
+        });
+    }
+
+    // --- CHECKOUT INTEGRADO ---
+    function checkOut(id,d){
+        if(d>0.1)return alert("⚠️ Hay deuda.");
+        if(!confirm("¿Finalizar estancia y marcar para LIMPIEZA?"))return;
+        
+        const r=ress.find(x=>x.id==id);
+        const tC=(r.consumos||[]).reduce((a,b)=>a+(b.precio*b.cantidad),0);
+        r.totalFinal=r.total+tC; r.fechaCierre=new Date().toLocaleString();
+        
+        limpieza[r.habNum] = 'sucia';
+        localStorage.setItem('sumaj_clean_v1', JSON.stringify(limpieza));
+
+        historial.push(r); ress=ress.filter(x=>x.id!==id);
+        localStorage.setItem('sumaj_hist_v5',JSON.stringify(historial));
+        localStorage.setItem('sumaj_ress_v5',JSON.stringify(ress));
+        registrarLog("CHECK_OUT", `Hab ${r.habNum} - ${r.cliente}`);
+        
+        modalInstance.hide(); 
+        actualizarPantalla(); 
+        actualizarReporte(); 
+        renderCal();
+        renderLimpieza(); 
+    }
+
+    // --- CALENDARIO EXACTO v19.1 ---
+    function navMes(delta) {
+        calDate.setMonth(calDate.getMonth() + delta);
+        calDate.setDate(1); 
+        renderCal();
+    }
+
+    function renderCal() {
+        const t = document.getElementById('tablaCal'); 
+        t.innerHTML = '';
+        const year = calDate.getFullYear();
+        const month = calDate.getMonth();
+        const daysCount = new Date(year, month + 1, 0).getDate();
+        const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+        document.getElementById('calMesTitulo').innerText = `${meses[month]} ${year}`;
+
+        let head = '<thead><tr><th class="cal-room-col">HAB</th>';
+        const dates = [];
+        for(let i = 1; i <= daysCount; i++){
+            const d = new Date(year, month, i);
+            const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
+            dates.push(iso);
+            const wD = ["D","L","M","M","J","V","S"][d.getDay()];
+            head += `<th class="${iso===hoy?'cal-today-col':''}">${wD}<br>${i}</th>`;
+        }
+        head += '</tr></thead><tbody>';
+        
+        habs.forEach(h => {
+            head += `<tr><td class="cal-room-col">${h.num}</td>`;
+            dates.forEach(dayIso => {
+                const activeIn = ress.find(r => r.habNum == h.num && r.in === dayIso);
+                const activeOut = ress.find(r => r.habNum == h.num && r.out === dayIso);
+                const activeMid = ress.find(r => r.habNum == h.num && dayIso > r.in && dayIso < r.out);
+                const histIn = historial.find(r => r.habNum == h.num && r.in === dayIso);
+                const histOut = historial.find(r => r.habNum == h.num && r.out === dayIso);
+                const histMid = historial.find(r => r.habNum == h.num && dayIso > r.in && dayIso < r.out);
+
+                let cellHTML = '';
+                const styleDiv = (r, type, isHist) => {
+                    const color = isHist ? 'var(--historial)' : getColorStatus(r);
+                    let grad = '';
+                    if (type === 'start') grad = `linear-gradient(to right, white 50%, ${color} 50%)`; 
+                    else if (type === 'end') grad = `linear-gradient(to right, ${color} 50%, white 50%)`; 
+                    else grad = color; 
+                    return `background:${grad}; color:white; justify-content:${type==='start'?'flex-end':'center'}; padding-right:${type==='start'?'2px':'0'}; padding-left:${type==='end'?'2px':'0'};`;
+                }
+
+                if (activeMid) cellHTML = `<div class="cell-content" style="${styleDiv(activeMid, 'mid', false)}" onclick="verDetalle(${h.num},${activeMid.id})">${activeMid.cliente.split(' ')[0]}</div>`; 
+                else if (activeIn && activeOut) { const cOut = getColorStatus(activeOut); const cIn = getColorStatus(activeIn); const mix = `background: linear-gradient(to right, ${cOut} 48%, white 48%, white 52%, ${cIn} 52%); color: white;`; cellHTML = `<div class="cell-content" style="${mix}" onclick="verDetalle(${h.num},${activeIn.id})">⇄</div>`; } 
+                else if (activeIn) cellHTML = `<div class="cell-content" style="${styleDiv(activeIn, 'start', false)}" onclick="verDetalle(${h.num},${activeIn.id})">${activeIn.cliente.split(' ')[0]}</div>`; 
+                else if (activeOut) cellHTML = `<div class="cell-content" style="${styleDiv(activeOut, 'end', false)}" onclick="verDetalle(${h.num},${activeOut.id})"></div>`; 
+                else if (histMid) cellHTML = `<div class="cell-content" style="${styleDiv(histMid, 'mid', true)}" onclick="verDetalle(${h.num},${histMid.id},true)">✓ ${histMid.cliente.split(' ')[0]}</div>`; 
+                else if (histIn) cellHTML = `<div class="cell-content" style="${styleDiv(histIn, 'start', true)}" onclick="verDetalle(${h.num},${histIn.id},true)">✓ ${histIn.cliente.split(' ')[0]}</div>`; 
+                else if (histOut) cellHTML = `<div class="cell-content" style="${styleDiv(histOut, 'end', true)}" onclick="verDetalle(${h.num},${histOut.id},true)"></div>`;
+
+                head += `<td class="cal-cell ${new Date(dayIso).getDay()===0||new Date(dayIso).getDay()===6?'cal-weekend':''}">${cellHTML}</td>`;
+            });
+            head += '</tr>';
+        });
+        t.innerHTML = head + '</tbody>';
+    }
+
+    function getColorStatus(r) { if(r.adelanto >= r.total) return 'var(--pagado)'; if(r.adelanto > 0) return 'var(--parcial)'; return 'var(--ocupado)'; }
+
+    // --- SISTEMA INIT ---
+    function initSystem() {
+        document.getElementById('checkin').value = hoy; document.getElementById('checkout').value = hoy;
+        document.getElementById('filtroFecha').value = hoy; document.getElementById('fechaOp').value = hoy; // FORCE HOY
+        calDate = new Date(); calDate.setDate(1); 
+        actualizarPantalla(); renderConfigHabs(); renderCal(); 
+        if(checkPermiso('nav-reporte')) actualizarReporte(); 
+        if(checkPermiso('nav-caja')) renderCaja(); 
+        if(checkPermiso('nav-inventario')) renderInventario();
+        if(checkPermiso('nav-usuarios')) { renderUsuarios(); renderLogs(); }
+        renderLimpieza(); // Init Limpieza
+        setInterval(()=>document.getElementById('reloj').innerText=new Date().toLocaleString(),1000);
+    }
+
+    // Funciones
+    function guardarReserva() { const d=(id)=>document.getElementById(id).value; const t=parseFloat(d('total'))||0; let ad=d('pagoEstado')==='Pagado'?t:(d('pagoEstado')==='Adelanto'?parseFloat(d('adelanto')):0); if(!d('cliente'))return alert("Falta nombre"); if(limpieza[parseInt(d('habSelect'))]==='sucia'||limpieza[parseInt(d('habSelect'))]==='limpieza'){if(!confirm("Habitación Sucia/Limpieza. ¿Asignar?"))return;} if(!validarDisponibilidad(parseInt(d('habSelect')),d('checkin'),d('checkout')))return alert("Ocupado"); ress.push({id:Date.now(),cliente:d('cliente'),dni:d('dni'),personas:d('numPersonas'),celular:d('celular'),habNum:parseInt(d('habSelect')),tipo:d('tipoHab'),in:d('checkin'),out:d('checkout'),total:t,adelanto:ad,medioPago:d('medioPago'),consumos:[]}); localStorage.setItem('sumaj_ress_v5',JSON.stringify(ress)); registrarLog("RESERVA",`Hab ${d('habSelect')} - ${d('cliente')}`); actualizarPantalla(); alert("Guardado"); renderCal(); }
+    function verDetalle(num,id,isH){if(!modalInstance)modalInstance=new bootstrap.Modal(document.getElementById('modalH'));let r;if(id)r=isH?historial.find(x=>x.id==id):ress.find(x=>x.id==id);else{const f=document.getElementById('filtroFecha').value;r=ress.find(x=>x.habNum==num&&(f>=x.in&&f<=x.out));}document.getElementById('mt').innerText=`Hab ${num} ${isH?'(Hist)':''}`;document.getElementById('mh').className=`modal-header ${r?(isH?'bg-secondary':'bg-danger'):'bg-success'}`;if(!r){const st=limpieza[num]||'limpia';let b='';if(st==='sucia')b=`<button class="btn btn-primary w-100" onclick="setEstadoLimpieza(${num},'limpieza');modalInstance.hide()">Empezar Limpieza</button>`;else if(st==='limpieza')b=`<button class="btn btn-success w-100" onclick="setEstadoLimpieza(${num},'limpia');modalInstance.hide()">Terminar Limpieza</button>`;else b=`<button class="btn btn-warning w-100" onclick="setEstadoLimpieza(${num},'sucia');modalInstance.hide()">Marcar Sucia</button>`;document.getElementById('mb').innerHTML=`<div class="text-center py-4"><h5>${st.toUpperCase()}</h5>${b}</div>`;modalInstance.show();return;}const cons=r.consumos||[];const tCons=cons.reduce((a,b)=>a+(b.precio*b.cantidad),0);const granT=isH?r.totalFinal:(r.total+tCons);const deu=isH?0:(granT-r.adelanto);const hBtn=isH?'display:none':'';let ops='<option value="">Item</option>';inventario.forEach(p=>ops+=`<option value="${p.id}">${p.nombre} - S/${p.precio}</option>`);let lHtml=cons.map((c,i)=>`<div class="d-flex justify-content-between border-bottom"><span>${c.cantidad}x ${c.item}</span><span>S/${(c.precio*c.cantidad).toFixed(2)} <i class="fas fa-trash text-danger" style="${hBtn}" onclick="delCons(${r.id},${i})"></i></span></div>`).join('');let h=`<div class="row"><div class="col-6 border-end"><h6>${r.cliente}</h6><p class="small">${r.in} a ${r.out}</p><div style="${hBtn}"><select id="selP" class="form-select mb-1">${ops}</select><input id="selQ" type="number" value="1" class="form-control mb-1"><button class="btn btn-primary btn-sm w-100" onclick="addCons(${r.id})">+</button></div><div class="mt-2 small">${lHtml}</div></div><div class="col-6"><div class="bg-light p-2 mb-2">Total: S/${granT}<br>Pagado: S/${r.adelanto}<br><b class="text-danger">Deuda: S/${deu.toFixed(2)}</b></div>${!isH&&deu>0.1?`<button class="btn btn-success w-100 mb-1" onclick="pay(${r.id},${deu})">Cobrar</button>`:''}<button class="btn btn-secondary w-100 mb-1" onclick="printR(${r.id},${isH})">Imprimir</button>${!isH?`<button class="btn btn-dark w-100" onclick="checkOut(${r.id},${deu})">CheckOut</button>`:''}</div></div>`;document.getElementById('mb').innerHTML=h;modalInstance.show();}
+    function addCons(id){const pid=parseInt(document.getElementById('selP').value),q=parseInt(document.getElementById('selQ').value);const p=inventario.find(i=>i.id===pid);if(p.tipo==='producto'&&p.stock<q)return alert("Sin stock");if(p.tipo==='producto'){p.stock-=q;localStorage.setItem('sumaj_inv_v2',JSON.stringify(inventario));}const r=ress.find(x=>x.id==id);if(!r.consumos)r.consumos=[];r.consumos.push({idProd:p.id,item:p.nombre,precio:p.precio,cantidad:q,tipo:p.tipo});localStorage.setItem('sumaj_ress_v5',JSON.stringify(ress));verDetalle(r.habNum,id);}
+    function delCons(id,i){const r=ress.find(x=>x.id==id),it=r.consumos[i];if(it.idProd&&it.tipo==='producto'){const p=inventario.find(x=>x.id===it.idProd);if(p){p.stock+=it.cantidad;localStorage.setItem('sumaj_inv_v2',JSON.stringify(inventario));}}r.consumos.splice(i,1);localStorage.setItem('sumaj_ress_v5',JSON.stringify(ress));verDetalle(r.habNum,id);}
+    function pay(id,m){if(confirm("¿Cobrar?")){const r=ress.find(x=>x.id==id);r.adelanto+=m;localStorage.setItem('sumaj_ress_v5',JSON.stringify(ress));verDetalle(r.habNum,id);renderCal();}}
+    function printR(id,isH){const r=isH?historial.find(x=>x.id==id):ress.find(x=>x.id==id);const tc=(r.consumos||[]).reduce((a,b)=>a+(b.precio*b.cantidad),0);const tg=isH?r.totalFinal:(r.total+tc);const d=isH?0:(tg-r.adelanto);let i=(r.consumos||[]).map(c=>`<tr><td>${c.cantidad}x ${c.item}</td><td>S/${(c.precio*c.cantidad).toFixed(2)}</td></tr>`).join('');const w=window.open('','PRINT','height=600,width=400');w.document.write(`<html><body><h3>SUMAJ</h3><p>${r.cliente}</p><table><tr><td>Aloj</td><td>S/${r.total}</td></tr>${i}</table><hr><p>TOTAL: S/${tg}<br>PAGADO: S/${r.adelanto}<br>DEUDA: S/${d.toFixed(2)}</p></body></html>`);w.print();w.close();}
+    function toggleAdelanto(){document.getElementById('divAdelanto').style.display=document.getElementById('pagoEstado').value==='Adelanto'?'block':'none';}
+    function toggleAdelantoCal(){document.getElementById('divAdelantoCal').style.display=document.getElementById('c_pagoEstado').value==='Adelanto'?'block':'none';}
+    function toggleStockInput(){const t=document.getElementById('invTipo').value;document.getElementById('divStockInput').style.display=t==='servicio'?'none':'block';}
+    function validarDisponibilidad(h,i,o){return !ress.some(r=>r.habNum==h&&i<r.out&&o>r.in);}
+    function guardarMovimientoCaja(){const t=document.getElementById('cajaTipo').value,d=document.getElementById('cajaDesc').value,m=parseFloat(document.getElementById('cajaMonto').value);if(!d||!m)return;caja.push({id:Date.now(),fecha:new Date().toLocaleString(),tipo:t,cat:document.getElementById('cajaCat').value,desc:d,monto:m});localStorage.setItem('sumaj_caja_v1',JSON.stringify(caja));registrarLog("CAJA",`${t}: ${m}`);renderCaja();document.getElementById('cajaDesc').value='';document.getElementById('cajaMonto').value='';}
+    function renderCaja(){const t=document.getElementById('bodyCaja');t.innerHTML='';let s=0;[...caja].reverse().forEach(m=>{if(m.tipo==='ingreso')s+=m.monto;else s-=m.monto;t.innerHTML+=`<tr><td>${m.fecha.split(',')[0]}</td><td>${m.tipo}</td><td>${m.cat}</td><td>${m.desc}</td><td>S/${m.monto}</td><td><button class="btn btn-sm text-danger" onclick="delCaja(${m.id})">x</button></td></tr>`;});document.getElementById('cajaSaldo').innerText=`S/${s.toFixed(2)}`;}
+    function delCaja(id){if(verificarPermisoAdmin()&&confirm("Borrar?")){caja=caja.filter(x=>x.id!==id);localStorage.setItem('sumaj_caja_v1',JSON.stringify(caja));renderCaja();}}
+    function guardarReservaCal(){const d=(id)=>document.getElementById(id).value;const t=parseFloat(d('c_total'))||0;let ad=d('c_pagoEstado')==='Pagado'?t:(d('c_pagoEstado')==='Adelanto'?parseFloat(d('c_adelanto')):0);if(!d('c_cliente'))return alert("Falta nombre");if(!validarDisponibilidad(parseInt(d('c_habSelect')),d('c_in'),d('c_out')))return alert("Ocupado");ress.push({id:Date.now(),cliente:d('c_cliente'),dni:d('c_dni'),personas:d('c_numPersonas'),celular:d('c_celular'),habNum:parseInt(d('c_habSelect')),tipo:d('c_tipoHab'),in:d('c_in'),out:d('c_out'),total:t,adelanto:ad,medioPago:d('c_medioPago'),consumos:[]});localStorage.setItem('sumaj_ress_v5',JSON.stringify(ress));registrarLog("RES_CAL",`Hab ${d('c_habSelect')}`);modalResCal.hide();renderCal();alert("Creada");}
+    function abrirModalReservaCal(){if(!modalResCal)modalResCal=new bootstrap.Modal(document.getElementById('modalResCal'));const s=document.getElementById('c_habSelect');s.innerHTML='';habs.forEach(h=>s.innerHTML+=`<option value="${h.num}">${h.num}</option>`);document.getElementById('c_in').value=hoy;document.getElementById('c_out').value=hoy;toggleAdelantoCal();modalResCal.show();}
+    function agregarProducto(){if(!checkPermiso('nav-inventario'))return;const t=document.getElementById('invTipo').value,n=document.getElementById('invNombre').value,p=parseFloat(document.getElementById('invPrecio').value);let s=parseInt(document.getElementById('invStock').value);if(!n)return;if(t==='servicio')s=9999;inventario.push({id:Date.now(),nombre:n,precio:p,stock:s,tipo:t});localStorage.setItem('sumaj_inv_v2',JSON.stringify(inventario));renderInventario();document.getElementById('invNombre').value='';}
+    function renderInventario(){const t=document.getElementById('tablaInventario');t.innerHTML='';inventario.forEach(p=>{t.innerHTML+=`<tr><td>${p.nombre}</td><td>${p.tipo}</td><td>${p.precio}</td><td>${p.tipo==='servicio'?'-':p.stock}</td><td><button class="btn btn-sm btn-danger" onclick="delInv(${p.id})">x</button></td></tr>`;});}
+    function delInv(id){if(verificarPermisoAdmin()&&confirm("Borrar?")){inventario=inventario.filter(x=>x.id!==id);localStorage.setItem('sumaj_inv_v2',JSON.stringify(inventario));renderInventario();}}
+    function actualizarReporte(){const t=document.getElementById('tablaHistorial');t.innerHTML='';const d=document.getElementById('hist_desde').value,h_=document.getElementById('hist_hasta').value;let c=0,p=0,g=0;historial.filter(h=>(!d||h.in>=d)&&(!h_||h.in<=h_)).forEach(h=>{c+=h.adelanto;t.innerHTML+=`<tr><td>${h.habNum}</td><td>${h.personas}</td><td>${h.cliente}</td><td>${h.in}</td><td>${h.totalFinal}</td><td>${h.adelanto}</td><td>${h.fechaCierre}</td></tr>`;});caja.forEach(x=>{if(x.tipo==='egreso')g+=x.monto;});document.getElementById('dashCobrado').innerText=c;document.getElementById('dashGastos').innerText=g;document.getElementById('dashUtilidad').innerText=(c-g);}
+    function actualizarOperaciones(){const f=document.getElementById('fechaOp').value,i=document.getElementById('listIn'),o=document.getElementById('listOut');i.innerHTML='';o.innerHTML='';ress.forEach(r=>{let h=`<div class="op-card ${r.in===f?'op-in':'op-out'}"><b>${r.habNum}</b> ${r.cliente}</div>`;if(r.in===f)i.innerHTML+=h;if(r.out===f)o.innerHTML+=h;});}
+    function togglePasswords(){showPass=!showPass;renderUsuarios();}
+    function guardarUsuario(){if(!verificarPermisoAdmin())return;const u=document.getElementById('newUserName').value,p=document.getElementById('newUserPass').value,idx=parseInt(document.getElementById('editUserIndex').value);if(!u||!p)return;const m=Array.from(document.querySelectorAll('.mod-check:checked')).map(x=>x.value);if(idx===-1)users.push({user:u,pass:p,modules:m});else{users[idx].user=u;users[idx].pass=p;users[idx].modules=m;}localStorage.setItem('sumaj_users_v1',JSON.stringify(users));renderUsuarios();limpiarFormUsuario();alert("Guardado");}
+    function renderUsuarios(){const t=document.getElementById('tablaUsuarios');t.innerHTML='';users.forEach((u,i)=>{t.innerHTML+=`<tr><td>${u.user}</td><td>${showPass?u.pass:'***'}</td><td>${u.modules.includes('all')?'TOTAL':u.modules.length}</td><td>${u.user!=='admin'?`<button class="btn btn-sm btn-info" onclick="editUser(${i})">E</button><button class="btn btn-sm btn-danger" onclick="delUser('${u.user}')">x</button>`:''}</td></tr>`});}
+    function editUser(i){const u=users[i];document.getElementById('editUserIndex').value=i;document.getElementById('newUserName').value=u.user;document.getElementById('newUserPass').value=u.pass;document.querySelectorAll('.mod-check').forEach(c=>c.checked=u.modules.includes(c.value)||u.modules.includes('all'));}
+    function delUser(u){if(verificarPermisoAdmin()&&confirm("Borrar?")){users=users.filter(x=>x.user!==u);localStorage.setItem('sumaj_users_v1',JSON.stringify(users));renderUsuarios();}}
+    function renderLogs(){const t=document.getElementById('tablaLogs');t.innerHTML='';const userFilter=document.getElementById('filterUser').value;const dateFrom=document.getElementById('filterDateFrom').value;const dateTo=document.getElementById('filterDateTo').value;logs.forEach(l=>{let pass=true;const logDate=l.dateIso.split('T')[0];if(userFilter&&l.user!==userFilter)pass=false;if(dateFrom&&logDate<dateFrom)pass=false;if(dateTo&&logDate>dateTo)pass=false;if(pass)t.innerHTML+=`<tr><td>${l.dateStr}</td><td>${l.user}</td><td>${l.action}</td><td>${l.details}</td></tr>`;});}
+    function imprimirLogs(){const w=window.open('');w.document.write(document.getElementById('printLogsArea').innerHTML);w.print();}
+    function exportarCalPDF(){const d=new jsPDF('l','mm','a4');d.text("Calendario",10,10);html2canvas(document.getElementById('calContainer')).then(c=>{d.addImage(c.toDataURL(),'PNG',10,20,280,0);d.save('cal.pdf');});}
+    function exportarCalImg(){html2canvas(document.getElementById('calContainer')).then(c=>{const a=document.createElement('a');a.href=c.toDataURL();a.download='cal.png';a.click();});}
+    function agregarHabitacion(){if(!checkPermiso('nav-config'))return;const n=parseInt(document.getElementById('newHabNum').value),p=parseInt(document.getElementById('newHabPiso').value);if(n&&p){habs.push({num:n,piso:p});habs.sort((a,b)=>a.num-b.num);localStorage.setItem('sumaj_habs_v5',JSON.stringify(habs));actualizarPantalla();renderConfigHabs();}}
+    function renderConfigHabs(){const l=document.getElementById('listaConfigHabs');l.innerHTML='';habs.forEach(h=>{l.innerHTML+=`<span class="badge bg-secondary me-2 p-2 mb-2">Hab ${h.num} <i class="fas fa-times ms-2 cursor-pointer" onclick="eliminarH(${h.num})"></i></span>`});}
+    function eliminarH(n){if(!checkPermiso('nav-config'))return;if(confirm("¿Borrar?")){habs=habs.filter(h=>h.num!=n);localStorage.setItem('sumaj_habs_v5',JSON.stringify(habs));actualizarPantalla();renderConfigHabs();}}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
